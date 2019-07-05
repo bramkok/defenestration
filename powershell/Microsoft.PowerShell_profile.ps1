@@ -1,139 +1,63 @@
-# PowerShell profile
+# Defenestration - PowerShell profile
 
-# Shell size
-$Shell = $Host.UI.RawUI
-$size = $Shell.WindowSize
-$size.width=70
-$size.height=55
- 
-# Environment variables
-$env:TERM = "xterm-256color"
-$env:EDITOR = "nvim"
+$ProfileInfo = Get-Item $PROFILE
+$global:ProfileDebug = $false 
 
-# Find out if the current user identity is elevated (has admin rights)
-$identity = [Security.Principal.WindowsIdentity]::GetCurrent()
-$principal = New-Object Security.Principal.WindowsPrincipal $identity
-$isAdmin = $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
- 
-# General #####################################################################
-############################################################################### 
- 
-# Set starting prompt location
-set-location $ENV:USERPROFILE
-
-# Set up command prompt and window title. Use UNIX-style convention for identifying 
-# whether user is elevated (root) or not. Window title shows current version of PowerShell
-# and appends [ADMIN] if appropriate for easy taskbar identification
-function prompt() { 
-    {
-        "" + (Get-Location) + " # " 
-    }
-    else 
-    {
-        "" + (Get-Location) + " $ "
-    }
+if (($ProfileInfo).LinkType -eq "SymbolicLink") {
+  $ProfileScriptsPath = Split-Path $ProfileInfo.Target
+} else {
+  $ProfileScriptsPath = Split-Path $ProfileInfo.FullName
 }
 
-$Host.UI.RawUI.WindowTitle = "PowerShell {0}" -f $PSVersionTable.PSVersion.ToString()
-if ($isAdmin) {
-    $Host.UI.RawUI.WindowTitle += " [root]"
+if (Test-Path("$ProfileScriptsPath\debug")) {
+  $global:ProfileDebug = [System.Convert]::ToInt16(
+    (Get-Content("$ProfileScriptsPath\debug"))
+  )
+  if ([System.Convert]::ToBoolean($global:ProfileDebug)) { $global:ProfileDebug = $true }
 }
 
-# Aliases #####################################################################
-###############################################################################
-
-# Set UNIX-like aliases for the admin command
-Set-Alias -Name su -Value admin
-Set-Alias -Name sudo -Value admin
-
-# Edit PowerShell profile
-if (!(Get-Alias pe)) {
-  New-Alias -Name pe -Value edit-profile
+function Source-PSScript($filename) {
+  if (Test-Path("$profilescriptspath\$filename")) { . "$profilescriptspath\$filename" }
 }
 
-# which
-if (!(Get-Alias which)) {
-  New-Alias which get-command
+# Load modules
+Import-Module posh-git -ErrorAction SilentlyContinue
+Import-Module z -ErrorAction SilentlyContinue
+$ChocolateyProfile = "$env:ChocolateyInstall\helpers\chocolateyProfile.psm1"
+if (Test-Path($ChocolateyProfile)) { Import-Module "$ChocolateyProfile" }
+
+# Source profile scripts
+. Source-PSScript "Microsoft.PowerShell_functions.ps1"
+. Source-PSScript "Microsoft.PowerShell_prompt.ps1"
+. Source-PSScript "Microsoft.PowerShell_environment.ps1"
+. Source-PSScript "Microsoft.PowerShell_aliases.ps1"
+. Source-PSScript "Microsoft.PowerShell_local.ps1"
+
+# Shell settings
+Set-Location $env:USERPROFILE
+Set-PSReadlineOption -BellStyle None
+
+# ViMode
+Set-PsReadlineOption -EditMode Vi -ViModeIndicator Cursor -HistoryNoDuplicate
+Set-PSReadlineKeyHandler -Key Tab -Function Complete
+Set-PSReadlineKeyHandler -Key Ctrl+n -Function Complete
+Set-PSReadlineKeyHandler -Key Ctrl+r -Function ReverseSearchHistory -ViMode Insert
+Set-PSReadlineKeyHandler -Key Ctrl+r -Function ReverseSearchHistory -ViMode Command
+
+# Reload profile
+function Reload-Profile() {
+  if ($global:ProfileDebug) { Write "Debug info: $global:ProfileDebug. Sourcing $PROFILE" }
+  . $PROFILE
+  if ($global:ProfileDebug) { Write "Sourcing other profile files."; Write "Importing the following modules:" }
+  $loadedModules = (Get-Module)
+  if ($global:ProfileDebug) { Write $loadedModules }
+  Write $loadedModules | Import-Module
+  Write "
+    PowerShell profile files and modules have been reloaded.
+  "
+  Power-Nap
+  if (!($global:ProfileDebug)) { Clear-Host }
 }
 
-# unix tools PowerShell equivalents
-
-# Edit profile
-function edit-profile() {
-  nvim $PROFILE
-}
-
-# Grep alternative
-# function grep($pattern) {
-#     $MyArgs=(Join-Path $ENV:HOME "bin\scr"),$args
-#     if($MyInvocation.ExpectingInput){
-#         python @MyArgs
-#     }
-# }  
-
-# ln -s /path/to/file /path/to/link
-function make-link($target, $link) {
-  New-Item -Path $link -ItemType SymbolicLink -Value $target
-}
-
-
-# wget
-# Create custom function for wget and unset the alias 
-# Remove-Alias wget (doens't work)
-function wwwget($url, $filename) {
-
-  write "this is wwwget"
-
-  sleep 3
-  
-  if (!($url)) {
-    write "Please provide at least a url URL."
-    write ""
-    write "Usage:"
-    write "wwwget http://website.com/image.jpg"
-    write "Or with a different filename:"
-    write "wwwget http://website.com/image.jpg C:\Files\picture.jpg"
-    exit
-  }
-
-  if (!$filename) {
-    $filename = "./" + $url.Substring($URL.LastIndexOf("/") + 1)
-  }
-  Invoke-Webrequest -Uri $url -OutFile $filename
-}
-
-function Get-Uptime() {
-  $os = Get-WmiObject win32_operatingsystem
-  $uptime = (Get-Date) - ($os.ConvertToDateTime($os.lastbootuptime))
-  $Display = "Uptime: " + $Uptime.Days + " days, " + $Uptime.Hours + " hours, " + $Uptime.Minutes + " minutes" 
-  Write-Output $Display
-}
-
-function Virtualize-Disk($user, $vmDirName, $vmdkFileName) {
-  if (!$user) {
-    $user = $USER
-  }
-  if (!$vmDirName) {
-    exit
-  }
-  VBoxManage internalcommands createrawvmdk -filename "C:\Users\<user_name>\VirtualBox VMs\<VM_folder_name>\<file_name>.vmdk" -rawdisk \\.\PhysicalDrive#
-}
-# docker-machine-create-generic
-# function docker-machine-create-generic($ip, $user, $key, $name) {
-#   if (!($ip || $user || $key || $name)) {
-#     echo "$ip || $user || $key || $name was missing, bye!"
-#     exit
-#   }
-#   echo $ip
-#   echo $user
-#   echo $key
-#   echo $name
-#   echo "docker-machine create --driver generic --generic-ip-address=$ip --generic-ssh-user $user --generic-ssh-key $key $name"
-# }
-
-# Delete temporary variables used to set $isAdmin
-Remove-Variable identity
-Remove-Variable principal
-
-# Clean up
-#Clear-Host
+# Clear
+if (!($global:ProfileDebug)) { Clear-Host } else { Write "" }

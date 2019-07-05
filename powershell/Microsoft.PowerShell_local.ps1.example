@@ -1,0 +1,4 @@
+# Defenestration - PowerShell Local (not in repository)
+
+# Administrator Password
+$env:AdministratorPassword = "W1nd0w5-V1st4-Rulezz"
